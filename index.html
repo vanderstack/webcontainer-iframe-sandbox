@@ -26,7 +26,7 @@
 </head>
 <body>
   <h1>Iframe Host Status</h1>
-  <p><strong>Version:</strong> 4.2.1 (Typo Fix)</p>
+  <p><strong>Version:</strong> 4.3.0 (Ready Promise Reload)</p>
   <p><strong>Status:</strong> <span id="status" class="loading">Initializing...</span></p>
   <h2>Live Log:</h2>
   <pre id="log-output"></pre>
@@ -49,6 +49,7 @@
       else statusEl.className = 'loading';
     }
 
+    // --- Gatekeeper Logic (Using Ready Promise) ---
     async function runGatekeeper() {
       logToScreen('Gatekeeper script started.');
       if (window.crossOriginIsolated) {
@@ -58,26 +59,31 @@
       }
 
       if ('serviceWorker' in navigator) {
-        logToScreen('Environment NOT isolated. Setting up reload listener...');
+        logToScreen('Environment NOT isolated. Registering service worker...');
         
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          logToScreen('Service worker has taken control. Reloading now with cache bust...');
-          const url = new URL(window.location.href);
-          url.searchParams.set('cachebust', Date.now());
-          window.location.href = url.href;
-        });
+        // Register the worker
+        const registration = await navigator.serviceWorker.register('./coi-serviceworker.js', { scope: './' });
 
-        logToScreen('Registering service worker...');
-        // --- THE TYPO FIX IS HERE ---
-        await navigator.serviceWorker.register('./coi-serviceworker.js', { scope: './' });
-        // --- END OF FIX ---
+        // --- THE CHANGE IS HERE ---
+        // Wait until the worker is fully controlling the page.
+        // The .ready promise resolves when the service worker is active.
+        await navigator.serviceWorker.ready;
+        
+        // Only reload if the page is STILL not isolated after the worker is ready.
+        if (!window.crossOriginIsolated) {
+            logToScreen('Service worker is ready. Reloading page to apply isolation...');
+            window.location.reload();
+        }
+        // --- END OF CHANGE ---
 
       } else {
         logToScreen('ERROR: Service workers are not supported.', 'error');
       }
     }
 
+    // --- Main Application Logic (Unchanged) ---
     function main() {
+      // ... (The rest of the main() function is exactly the same as before)
       let webcontainerInstance = null;
       let isContainerBooted = false;
       let parentIsReady = false;
@@ -131,6 +137,7 @@
       initializeContainer();
     }
 
+    // Start the process
     runGatekeeper();
   </script>
 </body>
