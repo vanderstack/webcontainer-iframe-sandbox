@@ -3,11 +3,23 @@
 <head>
   <title>WebContainer Host</title>
   <style>
-    body { font-family: sans-serif; padding: 1em; }
+    body { font-family: sans-serif; padding: 1em; font-size: 14px; }
     #status { padding: 0.5em; border-radius: 4px; font-weight: bold; }
     .loading { background-color: #ffc; color: #333; }
     .success { background-color: #cfc; color: #030; }
     .error { background-color: #fcc; color: #300; }
+    /* NEW: Styling for the log container */
+    #log-output {
+      background-color: #222;
+      color: #eee;
+      font-family: monospace;
+      padding: 1em;
+      border-radius: 4px;
+      height: 300px;
+      overflow-y: scroll;
+      white-space: pre-wrap;
+      margin-top: 1em;
+    }
   </style>
   <script type="importmap">
     { "imports": { "@webcontainer/api": "https://esm.sh/@webcontainer/api" } }
@@ -15,76 +27,97 @@
 </head>
 <body>
   <h1>Iframe Host Status</h1>
-  <p><strong>Version:</strong> 3.0.0 (Single-File Logic)</p>
+  <p><strong>Version:</strong> 4.0.0 (Visual Log)</p>
   <p><strong>Status:</strong> <span id="status" class="loading">Initializing...</span></p>
+  
+  <!-- NEW: The log container -->
+  <h2>Live Log:</h2>
+  <pre id="log-output"></pre>
 
   <script type="module">
-    // This single script now contains all logic.
     import { WebContainer } from '@webcontainer/api';
 
     const statusEl = document.getElementById('status');
+    const logOutputEl = document.getElementById('log-output'); // NEW: Get the log element
+
     let webcontainerInstance = null;
     let isContainerBooted = false;
     let parentIsReady = false;
 
-    // --- Gatekeeper Logic ---
+    // --- NEW: Centralized Logging Helper ---
+    function logToScreen(message, statusType = 'loading') {
+      const timestamp = new Date().toLocaleTimeString();
+      const logMessage = `[${timestamp}] ${message}\n`;
+
+      // Append to the visual log and auto-scroll
+      logOutputEl.textContent += logMessage;
+      logOutputEl.scrollTop = logOutputEl.scrollHeight;
+
+      // Also log to the actual console for deeper debugging
+      console.log(`[Iframe] ${message}`);
+
+      // Update the main status indicator
+      statusEl.textContent = message;
+      if (statusType === 'success') statusEl.className = 'success';
+      else if (statusType === 'error') statusEl.className = 'error';
+      else statusEl.className = 'loading';
+    }
+
+    // --- Gatekeeper Logic (Now uses the logger) ---
     async function runGatekeeper() {
+      logToScreen('Gatekeeper script started.');
       if (window.crossOriginIsolated) {
-        statusEl.textContent = 'Environment is isolated. Starting main logic...';
-        // If we are isolated, we can proceed to the main logic.
+        logToScreen('Environment is isolated. Starting main logic...');
         main();
         return;
       }
 
       if ('serviceWorker' in navigator) {
-        statusEl.textContent = 'Registering service worker for isolation...';
-        const registration = await navigator.serviceWorker.register('./coi-serviceworker.js');
+        logToScreen('Registering service worker for isolation...');
+        const registration = await navigator.serviceWorker.register('./coi-serviceworker.js', { scope: './' });
         if (registration.active && !navigator.serviceWorker.controller) {
-          statusEl.textContent = 'Reloading to activate isolation...';
+          logToScreen('Reloading to activate isolation...');
           window.location.reload();
         }
       } else {
-        statusEl.textContent = 'ERROR: Service workers not supported.';
-        statusEl.className = 'error';
+        logToScreen('ERROR: Service workers not supported.', 'error');
       }
     }
 
-    // --- Main Application Logic ---
+    // --- Main Application Logic (Now uses the logger) ---
     function main() {
       function attemptHandshakeReply() {
         if (isContainerBooted && parentIsReady) {
-          console.log('[Iframe] Both sides ready. Sending IFRAME_READY.');
-          statusEl.textContent = 'Handshake complete. Ready for commands.';
-          statusEl.className = 'success';
+          logToScreen('Both sides ready. Sending IFRAME_READY.', 'success');
           parent.postMessage({ type: 'IFRAME_READY' }, '*');
         }
       }
 
       async function initializeContainer() {
         try {
-          statusEl.textContent = 'Booting WebContainer...';
-          console.log('[Iframe] Booting WebContainer...');
+          logToScreen('Booting WebContainer...');
           webcontainerInstance = await WebContainer.boot();
           isContainerBooted = true;
-          console.log('[Iframe] WebContainer booted.');
+          logToScreen('WebContainer booted successfully.');
           attemptHandshakeReply();
         } catch (error) {
-          console.error('[Iframe] WebContainer boot failed:', error);
-          statusEl.textContent = `ERROR: ${error.message}`;
-          statusEl.className = 'error';
+          logToScreen(`FATAL: WebContainer boot failed: ${error.message}`, 'error');
           parent.postMessage({ type: 'IFRAME_BOOT_ERROR', error: error.message }, '*');
         }
       }
 
       async function handleCommand(command, args) {
         if (!webcontainerInstance) return;
+        logToScreen(`Executing command: ${command} ${args.join(' ')}`);
         const process = await webcontainerInstance.spawn(command, args);
         process.output.pipeTo(new WritableStream({
           write(data) {
+            logToScreen(`LOG: ${data.trim()}`);
             parent.postMessage({ type: 'EXECUTION_LOG', log: data }, '*');
           }
         }));
         const exitCode = await process.exit;
+        logToScreen(`Command finished with exit code: ${exitCode}`);
         parent.postMessage({ type: 'EXECUTION_RESULT', exitCode }, '*');
       }
 
@@ -92,18 +125,17 @@
         const { type, payload } = event.data;
         if (type === 'INIT') {
           parentIsReady = true;
-          console.log('[Iframe] Received INIT signal from parent.');
+          logToScreen('Received INIT signal from parent.');
           attemptHandshakeReply();
         } else if (type === 'EXECUTE_COMMAND') {
           handleCommand(payload.command, payload.args);
         }
       });
 
-      // Start the container boot process
       initializeContainer();
     }
 
-    // Start the entire process by running the gatekeeper first.
+    // Start the entire process
     runGatekeeper();
   </script>
 </body>
