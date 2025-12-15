@@ -2,28 +2,14 @@
 <html>
 <head>
   <title>WebContainer Host</title>
-  <script>
-    // A more robust registration script for coi-serviceworker
-    (async () => {
-      if (window.crossOriginIsolated) {
-        console.log('[Iframe] Already isolated. No action needed.');
-        return;
-      }
-
-      if ('serviceWorker' in navigator) {
-        const registration = await navigator.serviceWorker.register('./coi-serviceworker.js');
-        
-        // Wait for the service worker to become the controller.
-        // If there's no controller, it means this is the first load, so we need to reload.
-        if (registration.active && !navigator.serviceWorker.controller) {
-          console.log('[Iframe] Service worker registered. Reloading page to activate isolation...');
-          window.location.reload();
-        }
-      } else {
-        console.error('[Iframe] Service workers are not supported. Cannot enable isolation.');
-      }
-    })();
-  </script>
+  <style>
+    /* Basic styling for the status indicator */
+    body { font-family: sans-serif; padding: 1em; }
+    #status { padding: 0.5em; border-radius: 4px; font-weight: bold; }
+    .loading { background-color: #ffc; color: #333; }
+    .success { background-color: #cfc; color: #030; }
+    .error { background-color: #fcc; color: #300; }
+  </style>
   <script type="importmap">
     {
       "imports": {
@@ -31,9 +17,44 @@
       }
     }
   </script>
+  <script>
+    // This script acts as a gatekeeper.
+    (async () => {
+      const statusEl = document.getElementById('status');
+      
+      if (window.crossOriginIsolated) {
+        statusEl.textContent = 'Environment is isolated. Loading main.js...';
+        statusEl.className = 'loading';
+        
+        const script = document.createElement('script');
+        script.type = 'module';
+        script.src = './main.js';
+        document.body.appendChild(script);
+        return;
+      }
+
+      if ('serviceWorker' in navigator) {
+        statusEl.textContent = 'Environment is NOT isolated. Registering service worker...';
+        statusEl.className = 'loading';
+        
+        const registration = await navigator.serviceWorker.register('./coi-serviceworker.js');
+        
+        if (registration.active && !navigator.serviceWorker.controller) {
+          statusEl.textContent = 'Service worker is active. Reloading page to apply isolation...';
+          window.location.reload();
+        }
+      } else {
+        statusEl.textContent = 'ERROR: Service workers are not supported.';
+        statusEl.className = 'error';
+      }
+    })();
+  </script>
 </head>
 <body>
-  <!-- Load the main logic script as a module -->
-  <script type="module" src="./main.js"></script>
+  <h1>Iframe Host Status</h1>
+  <p><strong>Version:</strong> 1.2.0</p>
+  <p><strong>Status:</strong> <span id="status" class="loading">Initializing...</span></p>
+  
+  <!-- The main.js script will be added here dynamically by the gatekeeper script above -->
 </body>
 </html>
