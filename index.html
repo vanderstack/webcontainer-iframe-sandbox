@@ -1,144 +1,57 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>WebContainer Host</title>
+  <title>COI Sanity Check</title>
   <style>
-    body { font-family: sans-serif; padding: 1em; font-size: 14px; }
-    #status { padding: 0.5em; border-radius: 4px; font-weight: bold; }
+    body { font-family: sans-serif; padding: 1em; font-size: 16px; text-align: center; }
+    #status-box { padding: 1em; border-radius: 8px; font-weight: bold; font-size: 1.2em; margin-top: 2em; }
     .loading { background-color: #ffc; color: #333; }
     .success { background-color: #cfc; color: #030; }
     .error { background-color: #fcc; color: #300; }
-    #log-output {
-      background-color: #222;
-      color: #eee;
-      font-family: monospace;
-      padding: 1em;
-      border-radius: 4px;
-      height: 300px;
-      overflow-y: scroll;
-      white-space: pre-wrap;
-      margin-top: 1em;
-    }
   </style>
-  <script type="importmap">
-    { "imports": { "@webcontainer/api": "https://esm.sh/@webcontainer/api" } }
-  </script>
 </head>
 <body>
-  <h1>Iframe Host Status</h1>
-  <p><strong>Version:</strong> 4.3.0 (Ready Promise Reload)</p>
-  <p><strong>Status:</strong> <span id="status" class="loading">Initializing...</span></p>
-  <h2>Live Log:</h2>
-  <pre id="log-output"></pre>
+  <h1>Cross-Origin Isolation Sanity Check</h1>
+  <p>This page tests if a service worker can enable the required COOP/COEP headers.</p>
+  <div id="status-box" class="loading">Initializing...</div>
 
-  <script type="module">
-    import { WebContainer } from '@webcontainer/api';
+  <script>
+    // This script acts as a gatekeeper.
+    (async () => {
+      const statusEl = document.getElementById('status-box');
 
-    const statusEl = document.getElementById('status');
-    const logOutputEl = document.getElementById('log-output');
+      function logStatus(message, type) {
+        console.log(`[Sanity Check] ${message}`);
+        statusEl.textContent = message;
+        statusEl.className = type;
+      }
 
-    function logToScreen(message, statusType = 'loading') {
-      const timestamp = new Date().toLocaleTimeString();
-      const logMessage = `[${timestamp}] ${message}\n`;
-      logOutputEl.textContent += logMessage;
-      logOutputEl.scrollTop = logOutputEl.scrollHeight;
-      console.log(`[Iframe] ${message}`);
-      statusEl.textContent = message;
-      if (statusType === 'success') statusEl.className = 'success';
-      else if (statusType === 'error') statusEl.className = 'error';
-      else statusEl.className = 'loading';
-    }
+      logStatus('Script started. Checking isolation status...', 'loading');
 
-    // --- Gatekeeper Logic (Using Ready Promise) ---
-    async function runGatekeeper() {
-      logToScreen('Gatekeeper script started.');
+      // SUCCESS CONDITION: If the page is already isolated, we are done.
       if (window.crossOriginIsolated) {
-        logToScreen('Environment is isolated. Starting main logic...');
-        main();
+        logStatus('SUCCESS: Environment is cross-origin isolated.', 'success');
         return;
       }
 
+      // If not isolated, try to fix it with the service worker.
       if ('serviceWorker' in navigator) {
-        logToScreen('Environment NOT isolated. Registering service worker...');
+        logStatus('Environment NOT isolated. Setting up reload listener...', 'loading');
         
-        // Register the worker
-        const registration = await navigator.serviceWorker.register('./coi-serviceworker.js', { scope: './' });
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          logStatus('Service worker has taken control. Reloading with cache-bust...', 'loading');
+          const url = new URL(window.location.href);
+          url.searchParams.set('cachebust', Date.now());
+          window.location.href = url.href;
+        });
 
-        // --- THE CHANGE IS HERE ---
-        // Wait until the worker is fully controlling the page.
-        // The .ready promise resolves when the service worker is active.
-        await navigator.serviceWorker.ready;
-        
-        // Only reload if the page is STILL not isolated after the worker is ready.
-        if (!window.crossOriginIsolated) {
-            logToScreen('Service worker is ready. Reloading page to apply isolation...');
-            window.location.reload();
-        }
-        // --- END OF CHANGE ---
+        logStatus('Registering service worker...', 'loading');
+        await navigator.serviceWorker.register('./coi-serviceworker.js', { scope: './' });
 
       } else {
-        logToScreen('ERROR: Service workers are not supported.', 'error');
+        logStatus('ERROR: Service workers are not supported in this browser.', 'error');
       }
-    }
-
-    // --- Main Application Logic (Unchanged) ---
-    function main() {
-      // ... (The rest of the main() function is exactly the same as before)
-      let webcontainerInstance = null;
-      let isContainerBooted = false;
-      let parentIsReady = false;
-
-      function attemptHandshakeReply() {
-        if (isContainerBooted && parentIsReady) {
-          logToScreen('Both sides ready. Sending IFRAME_READY.', 'success');
-          parent.postMessage({ type: 'IFRAME_READY' }, '*');
-        }
-      }
-
-      async function initializeContainer() {
-        try {
-          logToScreen('Booting WebContainer...');
-          webcontainerInstance = await WebContainer.boot();
-          isContainerBooted = true;
-          logToScreen('WebContainer booted successfully.');
-          attemptHandshakeReply();
-        } catch (error) {
-          logToScreen(`FATAL: WebContainer boot failed: ${error.message}`, 'error');
-          parent.postMessage({ type: 'IFRAME_BOOT_ERROR', error: error.message }, '*');
-        }
-      }
-
-      async function handleCommand(command, args) {
-        if (!webcontainerInstance) return;
-        logToScreen(`Executing command: ${command} ${args.join(' ')}`);
-        const process = await webcontainerInstance.spawn(command, args);
-        process.output.pipeTo(new WritableStream({
-          write(data) {
-            logToScreen(`LOG: ${data.trim()}`);
-            parent.postMessage({ type: 'EXECUTION_LOG', log: data }, '*');
-          }
-        }));
-        const exitCode = await process.exit;
-        logToScreen(`Command finished with exit code: ${exitCode}`);
-        parent.postMessage({ type: 'EXECUTION_RESULT', exitCode }, '*');
-      }
-
-      window.addEventListener('message', (event) => {
-        const { type, payload } = event.data;
-        if (type === 'INIT') {
-          parentIsReady = true;
-          logToScreen('Received INIT signal from parent.');
-          attemptHandshakeReply();
-        } else if (type === 'EXECUTE_COMMAND') {
-          handleCommand(payload.command, payload.args);
-        }
-      });
-
-      initializeContainer();
-    }
-
-    // Start the process
-    runGatekeeper();
+    })();
   </script>
 </body>
 </html>
