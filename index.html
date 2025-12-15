@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebContainer Host</title>
+  <script src="./coi-serviceworker.js"></script>
+</head>
+<body>
+  <script>
+    // When the page is fully loaded...
+    window.addEventListener('DOMContentLoaded', () => {
+      // Announce to the parent window that the iframe is ready to receive commands.
+      console.log('[Iframe] Iframe is ready. Sending IFRAME_READY message.');
+      parent.postMessage({ type: 'IFRAME_READY' }, '*'); // Use a specific origin in production
+    });
+  </script>
+</body>
+</html>
