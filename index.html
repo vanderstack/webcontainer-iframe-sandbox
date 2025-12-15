@@ -26,7 +26,7 @@
 </head>
 <body>
   <h1>Iframe Host Status</h1>
-  <p><strong>Version:</strong> 4.2.0 (Cache-Busting Reload)</p>
+  <p><strong>Version:</strong> 4.2.1 (Typo Fix)</p>
   <p><strong>Status:</strong> <span id="status" class="loading">Initializing...</span></p>
   <h2>Live Log:</h2>
   <pre id="log-output"></pre>
@@ -62,17 +62,15 @@
         
         navigator.serviceWorker.addEventListener('controllerchange', () => {
           logToScreen('Service worker has taken control. Reloading now with cache bust...');
-          
-          // --- THE CHANGE IS HERE ---
-          // Add a unique query parameter to force a network request
           const url = new URL(window.location.href);
           url.searchParams.set('cachebust', Date.now());
           window.location.href = url.href;
-          // --- END OF CHANGE ---
         });
 
         logToScreen('Registering service worker...');
-        await navigator.service-worker.register('./coi-serviceworker.js', { scope: './' });
+        // --- THE TYPO FIX IS HERE ---
+        await navigator.serviceWorker.register('./coi-serviceworker.js', { scope: './' });
+        // --- END OF FIX ---
 
       } else {
         logToScreen('ERROR: Service workers are not supported.', 'error');
@@ -80,7 +78,6 @@
     }
 
     function main() {
-      // ... (The rest of the main() function is exactly the same as before)
       let webcontainerInstance = null;
       let isContainerBooted = false;
       let parentIsReady = false;
