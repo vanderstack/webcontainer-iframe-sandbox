@@ -3,15 +3,16 @@
 <head>
   <title>WebContainer Host</title>
   <script src="./coi-serviceworker.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "@webcontainer/api": "https://esm.sh/@webcontainer/api"
+      }
+    }
+  </script>
 </head>
 <body>
-  <script>
-    // When the page is fully loaded...
-    window.addEventListener('DOMContentLoaded', () => {
-      // Announce to the parent window that the iframe is ready to receive commands.
-      console.log('[Iframe] Iframe is ready. Sending IFRAME_READY message.');
-      parent.postMessage({ type: 'IFRAME_READY' }, '*'); // Use a specific origin in production
-    });
-  </script>
+  <!-- Load the main logic script as a module -->
+  <script type="module" src="./main.js"></script>
 </body>
 </html>
