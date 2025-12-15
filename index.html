@@ -8,7 +8,6 @@
     .loading { background-color: #ffc; color: #333; }
     .success { background-color: #cfc; color: #030; }
     .error { background-color: #fcc; color: #300; }
-    /* NEW: Styling for the log container */
     #log-output {
       background-color: #222;
       color: #eee;
@@ -27,10 +26,8 @@
 </head>
 <body>
   <h1>Iframe Host Status</h1>
-  <p><strong>Version:</strong> 4.0.0 (Visual Log)</p>
+  <p><strong>Version:</strong> 4.1.0 (Event-Driven Reload)</p>
   <p><strong>Status:</strong> <span id="status" class="loading">Initializing...</span></p>
-  
-  <!-- NEW: The log container -->
   <h2>Live Log:</h2>
   <pre id="log-output"></pre>
 
@@ -38,32 +35,22 @@
     import { WebContainer } from '@webcontainer/api';
 
     const statusEl = document.getElementById('status');
-    const logOutputEl = document.getElementById('log-output'); // NEW: Get the log element
+    const logOutputEl = document.getElementById('log-output');
 
-    let webcontainerInstance = null;
-    let isContainerBooted = false;
-    let parentIsReady = false;
-
-    // --- NEW: Centralized Logging Helper ---
+    // --- Centralized Logging Helper ---
     function logToScreen(message, statusType = 'loading') {
       const timestamp = new Date().toLocaleTimeString();
       const logMessage = `[${timestamp}] ${message}\n`;
-
-      // Append to the visual log and auto-scroll
       logOutputEl.textContent += logMessage;
       logOutputEl.scrollTop = logOutputEl.scrollHeight;
-
-      // Also log to the actual console for deeper debugging
       console.log(`[Iframe] ${message}`);
-
-      // Update the main status indicator
       statusEl.textContent = message;
       if (statusType === 'success') statusEl.className = 'success';
       else if (statusType === 'error') statusEl.className = 'error';
       else statusEl.className = 'loading';
     }
 
-    // --- Gatekeeper Logic (Now uses the logger) ---
+    // --- Gatekeeper Logic (Event-Driven) ---
     async function runGatekeeper() {
       logToScreen('Gatekeeper script started.');
       if (window.crossOriginIsolated) {
@@ -73,19 +60,29 @@
       }
 
       if ('serviceWorker' in navigator) {
-        logToScreen('Registering service worker for isolation...');
-        const registration = await navigator.serviceWorker.register('./coi-serviceworker.js', { scope: './' });
-        if (registration.active && !navigator.serviceWorker.controller) {
-          logToScreen('Reloading to activate isolation...');
+        logToScreen('Environment NOT isolated. Setting up reload listener...');
+        
+        // Listen for the event that tells us the new worker is in control.
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          logToScreen('Service worker has taken control. Reloading now...');
           window.location.reload();
-        }
+        });
+
+        // Now, register the worker. This will eventually trigger the 'controllerchange' event.
+        logToScreen('Registering service worker...');
+        await navigator.serviceWorker.register('./coi-serviceworker.js', { scope: './' });
+
       } else {
-        logToScreen('ERROR: Service workers not supported.', 'error');
+        logToScreen('ERROR: Service workers are not supported.', 'error');
       }
     }
 
-    // --- Main Application Logic (Now uses the logger) ---
+    // --- Main Application Logic (Unchanged) ---
     function main() {
+      let webcontainerInstance = null;
+      let isContainerBooted = false;
+      let parentIsReady = false;
+
       function attemptHandshakeReply() {
         if (isContainerBooted && parentIsReady) {
           logToScreen('Both sides ready. Sending IFRAME_READY.', 'success');
@@ -135,7 +132,7 @@
       initializeContainer();
     }
 
-    // Start the entire process
+    // Start the process
     runGatekeeper();
   </script>
 </body>
