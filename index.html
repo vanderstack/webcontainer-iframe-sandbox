@@ -2,7 +2,28 @@
 <html>
 <head>
   <title>WebContainer Host</title>
-  <script src="./coi-serviceworker.js"></script>
+  <script>
+    // A more robust registration script for coi-serviceworker
+    (async () => {
+      if (window.crossOriginIsolated) {
+        console.log('[Iframe] Already isolated. No action needed.');
+        return;
+      }
+
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.register('./coi-serviceworker.js');
+        
+        // Wait for the service worker to become the controller.
+        // If there's no controller, it means this is the first load, so we need to reload.
+        if (registration.active && !navigator.serviceWorker.controller) {
+          console.log('[Iframe] Service worker registered. Reloading page to activate isolation...');
+          window.location.reload();
+        }
+      } else {
+        console.error('[Iframe] Service workers are not supported. Cannot enable isolation.');
+      }
+    })();
+  </script>
   <script type="importmap">
     {
       "imports": {
